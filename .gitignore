@@ -1,0 +1,12 @@
+*.mp4
+*.npy
+*.pkl
+*.png
+*.pdf
+*.txt
+*.pyc
+# *.ipynb
+code/notebooks/.ipynb_checkpoints/
+data/
+output/
+topicmod_extra/
