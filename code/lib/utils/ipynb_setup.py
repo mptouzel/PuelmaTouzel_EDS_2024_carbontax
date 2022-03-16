@@ -12,7 +12,7 @@ sns.set_style("ticks", {'axes.grid' : True})
 pl.rc("figure", facecolor="white",figsize = (8,8))
 #pl.rc("figure", facecolor="gray",figsize = (8,8))
 pl.rc('text', usetex=True)
-pl.rc('text.latex', preamble=[r'\usepackage{amsmath}'])
+pl.rc('text.latex', preamble=r'\usepackage{amsmath}')
 pl.rc('lines',markeredgewidth = 2)
 pl.rc('font',size = 24)
     
@@ -24,6 +24,6 @@ import itertools
 from importlib import reload
 
 #notebook config
-from IPython.core.display import display, HTML
+from IPython.display import display, HTML
 display(HTML("<style>.container { width:100% !important; }</style>"))
 from IPython.display import Math

@@ -9,4 +9,5 @@
 code/notebooks/.ipynb_checkpoints/
 data/
 output/
-topicmod_extra/
+topicmod_extra
+code/.Rhistory
