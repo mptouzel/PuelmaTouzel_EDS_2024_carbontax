@@ -7,8 +7,10 @@
 *.pyc
 # *.ipynb
 code/notebooks/.ipynb_checkpoints/
+code/.ipynb_checkpoints/
 data/
 output/
 topicmod_extra
 code/.Rhistory
 code/notebooks/old/
+code/notebooks/extra/

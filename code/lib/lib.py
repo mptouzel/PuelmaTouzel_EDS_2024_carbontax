@@ -2,11 +2,67 @@ import numpy as np
 import pandas as pd
 from functools import partial
 import string
+import nltk
 from nltk.stem.porter import PorterStemmer
 from nltk.corpus import stopwords
-from googletrans import Translator, constants  # pip install googletrans==4.0.0-rc1
+# from googletrans import Translator  # , constants  # pip install googletrans==4.0.0-rc1
 import time
 import random
+
+
+def process_data(data_dir, year):
+    if year == 2022:
+        # load dataset
+        df = pd.read_spss('../../data/carbon_tax/MW14523_032B_CLIENT.sav')
+
+        # format covariate metadata
+        included_fields = {'record': 'id', 'QLANG': 'lang', 'D1_7': 'sex', 'D3_7': 'ageyear', 'PROV': 'prov', 'D10_7': 'livingenv', 'D11_7': 'partisanship', 'D13_7': 'caruse', 'V3_7': 'partyvote', 'A2_7': 'warmingcause'}
+        covdf = df.loc[:, included_fields.keys()].rename(columns=included_fields)
+        for colname in covdf.columns[1:]:
+            if covdf[colname].dtype != float:
+                covdf[colname] = covdf[colname].astype(str)
+                # print(colname+':'+str(covdf[colname].unique()))
+
+        covdf['id'] = covdf['id'].astype(int)
+    elif year == 2019:
+        # load dataset
+        df = pd.read_stata('../../data/carbon_tax/CCOP_wave1.dta')
+
+        # format covariate metadata
+        included_fields = {'responseid': 'id', 'lang': 'lang', 'd1': 'sex', 'd3': 'ageyear', 'prov': 'prov', 'd10': 'livingenv', 'd11': 'partisanship', 'd13': 'caruse', 'v3': 'partyvote'}
+        covdf = df.loc[:, included_fields.keys()].rename(columns=included_fields)
+
+    covdf = convert_type(covdf, year=year)
+
+    # pick question for pull responses from
+    question_label = 'carbontax_q3'
+    question_num = '3'  # carbon tax
+    restypelist = ['support', 'oppose', 'notsure']
+    idx_labellist = list('abc') if year == 2019 else list('ABC')
+    qstem = 'po' if year == 2019 else 'PO'
+    end_str = '' if year == 2019 else '_7'
+
+    qlabellist = [qstem + str(question_num) + let + end_str for let in idx_labellist]
+    resp_dict = dict(zip(qlabellist, restypelist))
+    resdf = get_resdf(df, resp_dict, idname='responseid' if year == 2019 else 'record')
+
+    fdf = pd.merge(resdf, covdf, on='id')
+
+    # translate french responses
+    fdf['resclean'] = fdf.res.values
+    if True:
+        fdf.loc[fdf.lang == 'FR', ['res', 'resclean']] = pd.read_csv(data_dir + question_label + '_' + str(year) + 'translations', index_col=0)
+    else:
+        fdf.loc[fdf.lang == 'FR', 'resclean'] = translate_responses(fdf.loc[fdf.lang == 'FR', 'res'])
+        fdf.loc[fdf.lang == 'FR', ['res', 'resclean']].to_csv(data_dir + question_label + '_' + str(year) + 'translations')
+
+    # clean corpus
+    wordfixfile = '../../data/carbon_tax/CCOP_wave1_nonwords_tabseparated.csv'
+    cleaned_responses, vocabulary = clean_corpus(fdf.resclean, wordfixfile=wordfixfile)  # ,reduce_to_stems_flag=False)
+    fdf.resclean = cleaned_responses
+    fdf = fdf[~(fdf.resclean == '')]
+    fdf.to_csv(data_dir + question_label + '_' + str(year) + 'data.csv', sep='\t', index=False)
+    return fdf
 
 
 def label_response(row, resp_dict):
@@ -17,14 +73,14 @@ def label_response(row, resp_dict):
     return row
 
 
-def get_resdf(df, resp_dict):
-    resdf = df.loc[:, ['responseid'] + list(resp_dict.keys())]
+def get_resdf(df, resp_dict, idname='responseid'):
+    resdf = df.loc[:, [idname] + list(resp_dict.keys())]
     resdf['res'] = ''
     resdf['restype'] = ''
     part_lr = partial(label_response, resp_dict=resp_dict)
     resdf = resdf.apply(part_lr, axis=1)
     resdf = resdf.drop(columns=list(resp_dict.keys()))
-    resdf = resdf.rename(columns={'responseid': 'id'})
+    resdf = resdf.rename(columns={idname: 'id'})
     print(resdf.restype.value_counts())
     return resdf
 
@@ -32,13 +88,26 @@ def get_resdf(df, resp_dict):
 def convert_partyvote_to_partisanvote(party):
     if party == 'Conservative Party' or party == "People's Party":
         partisan = 'conservative'
-    elif party == 'Liberal Party' or party == 'ndp' or party == 'Green Party' or party == 'Bloc Québécois':
+    elif party == 'Liberal Party' or party == 'ndp' or party == 'NDP' or party == 'Green Party' or party == 'Bloc Québécois':
         partisan = 'progressive'
-    elif party == 'I would not vote':
+    elif party == 'I would not vote' or party == 'Other (please specify)':
         partisan = 'no vote'
     else:
-        print('not a standard response!')
+        print('party not a standard response!')
     return partisan
+
+
+def convert_warmingcause(cause):
+    if cause == 'Mostly human activity':
+        return 'human'
+    elif cause == 'Mostly natural patterns':
+        return 'natural'
+    elif cause == 'Neither because climate change is not happening':
+        return 'denial'
+    elif cause == 'Not sure' or cause == 'nan':
+        return 'notsure'
+    else:
+        print('warming not a standard response!')
 
 
 def convert_year_to_decade(age):
@@ -59,7 +128,7 @@ def convert_year_to_decade(age):
         elif age >= 60:
             return '60+'
         else:
-            print(age)
+            print('age not a standard response!')
 
 
 def convert_livingenv(livenv):
@@ -74,10 +143,10 @@ def convert_livingenv(livenv):
     elif livenv == 'Not sure':
         return 'notsure'
     else:
-        print(livenv)
+        print('livenv not a standard response!')
 
 
-def convert_partisanship(specscore):
+def convert_partisanship2019(specscore):
     if specscore == 'Centre5':
         return 'none'
     elif specscore == 'Far to the right10':
@@ -93,6 +162,20 @@ def convert_partisanship(specscore):
             return 'right'
 
 
+def convert_partisanship2022(specscore):
+    specscore = int(specscore)
+    if specscore == 99:
+        return 'notsure'
+    elif specscore < 5:
+        return 'left'
+    elif specscore > 5:
+        return 'right'
+    elif specscore == 5:
+        return 'none'
+    else:
+        print('partisan not a standard response!')
+
+
 def convert_caruse(modetoworkschool):
     if modetoworkschool == 'Drive alone':
         return 'driver'
@@ -102,15 +185,31 @@ def convert_caruse(modetoworkschool):
             modetoworkschool == 'Cycle' or modetoworkschool == 'Work/study at home' or \
             modetoworkschool == "This doesn't apply to me":
         return 'none'
+    else:
+        print('caruse not a standard response!')
 
 
-def convert_type(df):
+def convert_lang(lang):
+    if lang == 'English / Anglais':
+        return 'EN'
+    elif lang == 'Français / French':
+        return 'FR'
+    else:
+        print('lang not a standard response!')
+
+
+def convert_type(df, year=2019):
     df['agedec'] = df['ageyear'].apply(convert_year_to_decade)
     df = df.drop(columns='ageyear')
     df['livingenv'] = df['livingenv'].apply(convert_livingenv)
-    df['partisanship'] = df['partisanship'].apply(convert_partisanship)
     df['caruse'] = df['caruse'].apply(convert_caruse)
     df['partyvote'] = df['partyvote'].apply(convert_partyvote_to_partisanvote)
+    if year == 2022:
+        df['warmingcause'] = df['warmingcause'].apply(convert_warmingcause)
+        df['lang'] = df['lang'].apply(convert_lang)
+        df['partisanship'] = df['partisanship'].apply(convert_partisanship2022)
+    elif year == 2019:
+        df['partisanship'] = df['partisanship'].apply(convert_partisanship2019)
     return df
 
 
@@ -224,6 +323,32 @@ def build_vocabulary(d_series):
     )
     dlist.sort()
     return pd.DataFrame(dlist, columns=["word"])
+
+
+def detect_english_or_french(responses):
+    response_language = []
+    translator = Translator()
+    st = time.time()
+    for ind, response in responses.iteritems():
+        done = False
+        while not done:
+            try:
+                response_language.append(translator.detect(response).lang)
+                # if translator.detect(response).confidence < 1:
+                #     print(ind)
+                done = True
+            except (AttributeError, IndexError) as error:
+                print(str(ind) + ' failed. Resetting translator and trying again')
+                if error == 'list index out of range':
+                    response_language.append('failed')
+                    translator = Translator()
+                    done = True
+                else:
+                    time.sleep(1)
+                    translator = Translator()
+                print(error)
+    print("finished in " + str(time.time() - st))
+    return response_language
 
 
 def translate_responses(french_responses):
