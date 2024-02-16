@@ -5,12 +5,18 @@
 *.pdf
 *.txt
 *.pyc
-# *.ipynb
-code/notebooks/.ipynb_checkpoints/
-code/.ipynb_checkpoints/
-data/
-output/
-topicmod_extra
-code/.Rhistory
-code/notebooks/old/
-code/notebooks/extra/
+/code/notebooks/.ipynb_checkpoints
+/code/.ipynb_checkpoints
+/data
+/output/*
+!/output/data
+/output/data/*
+!/output/data/2019
+/output/data/2019/*
+!/output/data/2019/carbontax_q3_2019data.csv
+/output/figures
+/output/stm_models
+/topicmod_extra
+/code/.Rhistory
+/code/notebooks/old/
+/code/notebooks/extra/
